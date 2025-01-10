@@ -272,6 +272,8 @@ public class WatsonxGenerationModel extends Watsonx
                             }
                             case TOOL_EXECUTION_RESULT ->
                                 throw new RuntimeException("The generation model doesn't allow the use of tools");
+                            case CONTEXT ->
+                                throw new RuntimeException("The generation model doesn't allow the use of context");
                         };
                     }
                 }).collect(joining(this.promptJoiner));

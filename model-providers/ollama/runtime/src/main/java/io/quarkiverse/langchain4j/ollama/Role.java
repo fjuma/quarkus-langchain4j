@@ -13,5 +13,6 @@ public enum Role {
     SYSTEM,
     USER,
     ASSISTANT,
-    TOOL
+    TOOL,
+    CONTEXT
 }
