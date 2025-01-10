@@ -22,6 +22,7 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
 import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.ContentType;
+import dev.langchain4j.data.message.CustomRoleMessage;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
@@ -32,6 +33,8 @@ import io.quarkiverse.langchain4j.QuarkusJsonCodecFactory;
 
 // TODO: this could use a lot of refactoring
 final class MessageMapper {
+
+    private static final String CONTEXT = "context";
 
     static {
         new TypeReference<>() {
@@ -71,7 +74,7 @@ final class MessageMapper {
                 .collect(Collectors.toList());
 
         return Message.builder()
-                .role(toOllamaRole(userMessage.type()))
+                .role(toOllamaRole(userMessage.type(), userMessage))
                 .content(text)
                 .images(ImageUtils.base64EncodeImageList(imageContents))
                 .build();
@@ -81,7 +84,7 @@ final class MessageMapper {
         if (message instanceof AiMessage aiMessage) {
             if (!aiMessage.hasToolExecutionRequests()) {
                 return Message.builder()
-                        .role(toOllamaRole(ChatMessageType.AI))
+                        .role(toOllamaRole(ChatMessageType.AI, message))
                         .content(aiMessage.text())
                         .build();
             }
@@ -99,7 +102,7 @@ final class MessageMapper {
                 }
 
                 return Message.builder()
-                        .role(toOllamaRole(ChatMessageType.AI))
+                        .role(toOllamaRole(ChatMessageType.AI, message))
                         .toolCalls(toolCalls)
                         .build();
             } catch (JsonProcessingException e) {
@@ -109,23 +112,30 @@ final class MessageMapper {
 
         if (message instanceof ToolExecutionResultMessage) {
             return Message.builder()
-                    .role(toOllamaRole(TOOL_EXECUTION_RESULT))
+                    .role(toOllamaRole(TOOL_EXECUTION_RESULT, message))
                     .content(message.text())
                     .build();
         }
 
         return Message.builder()
-                .role(toOllamaRole(message.type()))
+                .role(toOllamaRole(message.type(), message))
                 .content(message.text())
                 .build();
     }
 
-    private static Role toOllamaRole(ChatMessageType chatMessageType) {
+    private static Role toOllamaRole(ChatMessageType chatMessageType, ChatMessage chatMessage) {
         return switch (chatMessageType) {
             case SYSTEM -> Role.SYSTEM;
             case USER -> Role.USER;
             case AI -> Role.ASSISTANT;
             case TOOL_EXECUTION_RESULT -> Role.TOOL;
+            case CUSTOM_ROLE -> {
+                yield switch (((CustomRoleMessage) chatMessage).role()) {
+                    case CONTEXT -> Role.CONTEXT;
+                    default -> throw new IllegalArgumentException("Unknown ChatMessageType: " + chatMessageType);
+                };
+            }
+            default -> throw new IllegalArgumentException("Unknown ChatMessageType: " + chatMessageType);
         };
     }
 
