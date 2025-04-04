@@ -256,6 +256,12 @@ public class AiServicesProcessor {
             String chatModelName = chatModelName(instance, chatLanguageModelSupplierClassDotName,
                     streamingChatLanguageModelSupplierClassDotName, chatModelNames);
 
+            boolean isReactAgent = false;
+            AnnotationValue isReactAgentValue = instance.value("isReactAgent");
+            if (isReactAgentValue != null) {
+                isReactAgent = isReactAgentValue.asBoolean();
+            }
+
             boolean customRetrievalAugmentorSupplierClassIsABean = false;
             DotName retrievalAugmentorSupplierClassName = BEAN_IF_EXISTS_RETRIEVAL_AUGMENTOR_SUPPLIER;
             AnnotationValue retrievalAugmentorSupplierValue = instance.value("retrievalAugmentor");
@@ -343,7 +349,8 @@ public class AiServicesProcessor {
                             imageModelName,
                             toolProviderClassName,
                             beanName(declarativeAiServiceClassInfo),
-                            toolHallucinationStrategy(instance)));
+                            toolHallucinationStrategy(instance),
+                            isReactAgent));
         }
         toolProviderProducer.produce(new ToolProviderMetaBuildItem(toolProviderInfos));
 
@@ -535,6 +542,8 @@ public class AiServicesProcessor {
             ClassInfo declarativeAiServiceClassInfo = bi.getServiceClassInfo();
             String serviceClassName = declarativeAiServiceClassInfo.name().toString();
 
+            boolean isReactAgent = bi.isReactAgent();
+
             String chatLanguageModelSupplierClassName = (bi.getChatLanguageModelSupplierClassDotName() != null
                     ? bi.getChatLanguageModelSupplierClassDotName().toString()
                     : null);
@@ -656,7 +665,8 @@ public class AiServicesProcessor {
                                     injectStreamingChatModelBean,
                                     injectModerationModelBean,
                                     injectImageModel,
-                                    toolHallucinationStrategyClassName)))
+                                    toolHallucinationStrategyClassName,
+                                    isReactAgent)))
                     .setRuntimeInit()
                     .addQualifier()
                     .annotation(LangChain4jDotNames.QUARKUS_AI_SERVICE_CONTEXT_QUALIFIER).addValue("value", serviceClassName)

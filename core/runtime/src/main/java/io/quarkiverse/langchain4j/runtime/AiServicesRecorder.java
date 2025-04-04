@@ -307,6 +307,8 @@ public class AiServicesRecorder {
                                 .getConstructor().newInstance());
                     }
 
+                    quarkusAiServices.isReactAgent(info.isReactAgent());
+
                     return aiServiceContext;
                 } catch (ClassNotFoundException e) {
                     throw new IllegalStateException(e);

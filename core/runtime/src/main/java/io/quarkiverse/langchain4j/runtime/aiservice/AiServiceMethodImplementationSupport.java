@@ -29,6 +29,8 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jakarta.enterprise.inject.spi.BeanManager;
 
@@ -107,6 +109,9 @@ public class AiServiceMethodImplementationSupport {
     private static final List<DefaultMemoryIdProvider> DEFAULT_MEMORY_ID_PROVIDERS;
 
     private static final ServiceOutputParser SERVICE_OUTPUT_PARSER = new QuarkusServiceOutputParser(); // TODO: this might need to be improved
+
+    private static final Pattern REACT_PATTERN = Pattern
+            .compile("\\s*Thought:\\s*(.*)?\\n+Action:\\s*([^\\n\\(\\) ]+).*?\\n+Action Input:\\s*(.*)");
 
     static {
         var defaultMemoryIdProviders = ServiceHelper.loadFactories(
@@ -363,6 +368,37 @@ public class AiServiceMethodImplementationSupport {
             }
 
             AiMessage aiMessage = response.aiMessage();
+
+            if (context.isReactAgent()) {
+                Matcher reactPatternMatcher = REACT_PATTERN.matcher(
+                        aiMessage.text());
+                if (reactPatternMatcher.find()) {
+                    // parse required tool call
+                    String action = reactPatternMatcher.group(2);
+                    String actionInput = reactPatternMatcher.group(3);
+                    ToolExecutionRequest reactToolExecutionRequest = ToolExecutionRequest.builder()
+                            .name(action)
+                            .arguments(actionInput)
+                            .build();
+
+                    // add the required tool call to the tool execution requests
+                    List<ToolExecutionRequest> toolExecutionRequests = aiMessage.hasToolExecutionRequests()
+                            ? aiMessage.toolExecutionRequests()
+                            : new ArrayList<>();
+                    toolExecutionRequests.add(reactToolExecutionRequest);
+                    aiMessage = AiMessage.from(aiMessage.text(), toolExecutionRequests);
+
+                    /*
+                     * chatResponse = ChatResponse.builder()
+                     * .aiMessage(aiMessageWithTool)
+                     * .tokenUsage(chatResponse.tokenUsage())
+                     * .metadata(chatResponse.metadata())
+                     * .finishReason(chatResponse.finishReason())
+                     * .build();
+                     */
+                }
+            }
+
             chatMemory.add(aiMessage);
 
             if (!aiMessage.hasToolExecutionRequests()) {

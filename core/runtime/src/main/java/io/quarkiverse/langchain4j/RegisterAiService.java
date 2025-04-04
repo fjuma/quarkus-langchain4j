@@ -282,4 +282,6 @@ public @interface RegisterAiService {
             throw new UnsupportedOperationException("should never be called");
         }
     }
+
+    boolean isReactAgent() default false;
 }

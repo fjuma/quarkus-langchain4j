@@ -64,6 +64,11 @@ public class QuarkusAiServicesFactory implements AiServicesFactory {
             return this;
         }
 
+        public AiServices<T> isReactAgent(boolean isReactAgent) {
+            quarkusAiServiceContext().isReactAgent = isReactAgent;
+            return this;
+        }
+
         @SuppressWarnings("unchecked")
         @Override
         public T build() {

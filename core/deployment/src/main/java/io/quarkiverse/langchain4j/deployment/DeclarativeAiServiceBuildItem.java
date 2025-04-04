@@ -32,6 +32,8 @@ public final class DeclarativeAiServiceBuildItem extends MultiBuildItem {
     private final String imageModelName;
     private final Optional<String> beanName;
 
+    private final boolean isReactAgent;
+
     public DeclarativeAiServiceBuildItem(
             ClassInfo serviceClassInfo,
             DotName chatLanguageModelSupplierClassDotName,
@@ -49,7 +51,8 @@ public final class DeclarativeAiServiceBuildItem extends MultiBuildItem {
             String imageModelName,
             DotName toolProviderClassDotName,
             Optional<String> beanName,
-            DotName toolHallucinationStrategyClassDotName) {
+            DotName toolHallucinationStrategyClassDotName,
+            boolean isReactAgent) {
         this.serviceClassInfo = serviceClassInfo;
         this.chatLanguageModelSupplierClassDotName = chatLanguageModelSupplierClassDotName;
         this.streamingChatLanguageModelSupplierClassDotName = streamingChatLanguageModelSupplierClassDotName;
@@ -67,6 +70,7 @@ public final class DeclarativeAiServiceBuildItem extends MultiBuildItem {
         this.toolProviderClassDotName = toolProviderClassDotName;
         this.beanName = beanName;
         this.toolHallucinationStrategyClassDotName = toolHallucinationStrategyClassDotName;
+        this.isReactAgent = isReactAgent;
     }
 
     public ClassInfo getServiceClassInfo() {
@@ -135,5 +139,9 @@ public final class DeclarativeAiServiceBuildItem extends MultiBuildItem {
 
     public DotName getToolHallucinationStrategyClassDotName() {
         return toolHallucinationStrategyClassDotName;
+    }
+
+    public boolean isReactAgent() {
+        return isReactAgent;
     }
 }
