@@ -33,6 +33,7 @@ import io.quarkiverse.langchain4j.CreatedAware;
 import io.quarkiverse.langchain4j.ImageUrl;
 import io.quarkiverse.langchain4j.ModelName;
 import io.quarkiverse.langchain4j.PdfUrl;
+import io.quarkiverse.langchain4j.ReActAgent;
 import io.quarkiverse.langchain4j.RegisterAiService;
 import io.quarkiverse.langchain4j.SeedMemory;
 import io.quarkiverse.langchain4j.guardrails.InputGuardrails;
@@ -116,4 +117,5 @@ public class LangChain4jDotNames {
     static final DotName PDF_FILE = DotName.createSimple(PdfFile.class);
     static final DotName RESULT = DotName.createSimple(Result.class);
     static final DotName TOOL_PROVIDER = DotName.createSimple(ToolProvider.class);
+    static final DotName REACT_AGENT = DotName.createSimple(ReActAgent.class);
 }

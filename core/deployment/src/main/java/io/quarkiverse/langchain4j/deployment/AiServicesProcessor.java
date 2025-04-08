@@ -7,6 +7,7 @@ import static io.quarkiverse.langchain4j.deployment.LangChain4jDotNames.INPUT_GU
 import static io.quarkiverse.langchain4j.deployment.LangChain4jDotNames.MEMORY_ID;
 import static io.quarkiverse.langchain4j.deployment.LangChain4jDotNames.NO_RETRIEVAL_AUGMENTOR_SUPPLIER;
 import static io.quarkiverse.langchain4j.deployment.LangChain4jDotNames.OUTPUT_GUARDRAILS;
+import static io.quarkiverse.langchain4j.deployment.LangChain4jDotNames.REACT_AGENT;
 import static io.quarkiverse.langchain4j.deployment.LangChain4jDotNames.REGISTER_AI_SERVICES;
 import static io.quarkiverse.langchain4j.deployment.LangChain4jDotNames.SEED_MEMORY;
 import static io.quarkiverse.langchain4j.deployment.LangChain4jDotNames.V;
@@ -67,6 +68,7 @@ import org.objectweb.asm.tree.analysis.AnalyzerException;
 import dev.langchain4j.model.chat.request.json.JsonSchema;
 import dev.langchain4j.service.IllegalConfigurationException;
 import dev.langchain4j.service.Moderate;
+import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.output.JsonSchemas;
 import dev.langchain4j.service.output.ServiceOutputParser;
 import io.quarkiverse.langchain4j.ModelName;
@@ -172,6 +174,24 @@ public class AiServicesProcessor {
     private static final ResultHandle[] EMPTY_RESULT_HANDLES_ARRAY = new ResultHandle[0];
 
     private static final ServiceOutputParser SERVICE_OUTPUT_PARSER = new QuarkusServiceOutputParser(); // TODO: this might need to be improved
+
+    private static final String DEFAULT_REACT_SYSTEM_MESSAGE = "Please answer in the same language as the question and use the following format:\n"
+            + "```\n\n"
+            + "Thought: The current language of the user is: (user's language). I need to use a tool to help me answer the question.\n"
+            + "Action: tool name if using a tool\n"
+            + "Action Input: the input to the tool, in JSON format representing the arguments to the tool \\{\"input\": \"hello world\", \"num_beams\": 5\\}\n"
+            + "```\n\n"
+            + "Please ALWAYS start with a Thought.\n"
+            + "NEVER surround your response with markdown code markers. You may use code markers within your response if you need to."
+            + "Please use valid JSON format for the Action Input. Do NOT do this \\{\\{'input': 'hello world', 'num_beams': 5\\}\\}.\n"
+            + "If you specify a Thought, followed by an Action, followed by an Action Input and nothing else after that, the tool will respond with an Observation.\n"
+            + "Do not provide your own Observation.\n"
+            + "You should keep repeating the above Thought, Action, Action Input format until you have enough information to answer the question without using any more tools. "
+            + "At that point, you MUST respond in one of the following two formats:\n"
+            + "Thought: I can answer without using any more tools.\n"
+            + "Answer: [your answer here (in the same language as the user's question)]\n\n"
+            + "Thought: I cannot answer the question with the provided tools.\n"
+            + "Answer: [your answer here (in the same language as the user's question)\n";
 
     @BuildStep
     public void nativeSupport(CombinedIndexBuildItem indexBuildItem,
@@ -1336,8 +1356,11 @@ public class AiServicesProcessor {
             outputFormatInstructions = SERVICE_OUTPUT_PARSER.outputFormatInstructions(returnType);
         }
 
+        boolean isReActAgent = method.hasAnnotation(REACT_AGENT);
+
         List<TemplateParameterInfo> templateParams = gatherTemplateParamInfo(params, allowedPredicates, ignoredPredicates);
-        Optional<AiServiceMethodCreateInfo.TemplateInfo> systemMessageInfo = gatherSystemMessageInfo(method, templateParams);
+        Optional<AiServiceMethodCreateInfo.TemplateInfo> systemMessageInfo = gatherSystemMessageInfo(method, templateParams,
+                isReActAgent);
         AiServiceMethodCreateInfo.UserMessageInfo userMessageInfo = gatherUserMessageInfo(method, templateParams);
 
         AiServiceMethodCreateInfo.ResponseSchemaInfo responseSchemaInfo = ResponseSchemaInfo.of(generateResponseSchema,
@@ -1382,7 +1405,7 @@ public class AiServicesProcessor {
                 returnTypeSignature(method.returnType(), new TypeArgMapper(method.declaringClass(), index)),
                 overrideChatModelParamPosition, metricsTimedInfo, metricsCountedInfo, spanInfo, responseSchemaInfo,
                 methodToolClassInfo, switchToWorkerThreadForToolExecution, inputGuardrails, outputGuardrails,
-                accumulatorClassName, responseAugmenterClassName);
+                accumulatorClassName, responseAugmenterClassName, isReActAgent);
     }
 
     private Optional<JsonSchema> jsonSchemaFrom(java.lang.reflect.Type returnType) {
@@ -1506,10 +1529,13 @@ public class AiServicesProcessor {
     }
 
     private Optional<AiServiceMethodCreateInfo.TemplateInfo> gatherSystemMessageInfo(MethodInfo method,
-            List<TemplateParameterInfo> templateParams) {
+            List<TemplateParameterInfo> templateParams, boolean isReActAgent) {
         AnnotationInstance instance = method.annotation(LangChain4jDotNames.SYSTEM_MESSAGE);
         if (instance == null) { // try and see if the class is annotated with @SystemMessage
             instance = method.declaringClass().declaredAnnotation(LangChain4jDotNames.SYSTEM_MESSAGE);
+        } else if (isReActAgent) {
+            instance = AnnotationInstance.builder(SystemMessage.class)
+                    .add("value", new String[] { DEFAULT_REACT_SYSTEM_MESSAGE }).build();
         }
         if (instance != null) {
             String systemMessageTemplate = TemplateUtil.getTemplateFromAnnotationInstance(instance);
@@ -1943,5 +1969,4 @@ public class AiServicesProcessor {
                     .collect(Collectors.toMap(TemplateParameterInfo::name, TemplateParameterInfo::position));
         }
     }
-
 }

@@ -29,6 +29,8 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jakarta.enterprise.inject.spi.BeanManager;
 
@@ -107,6 +109,19 @@ public class AiServiceMethodImplementationSupport {
     private static final List<DefaultMemoryIdProvider> DEFAULT_MEMORY_ID_PROVIDERS;
 
     private static final ServiceOutputParser SERVICE_OUTPUT_PARSER = new QuarkusServiceOutputParser(); // TODO: this might need to be improved
+
+    private static final Pattern REACT_REASONING_PATTERN = Pattern
+            .compile("\\s*Thought:\\s(.*?)\\n+Action:\\s([^\\n\\(\\) ]+).*?\\n+Action Input:\\s?(\\{.*\\})");
+    private static final Pattern REACT_FINAL_RESPONSE_PATTERN = Pattern
+            .compile("\\s*Thought:\\s(.*?)\\n+Answer:\\s(.*?)$");
+    private static final String OBSERVATION = "Observation: ";
+    private static final String THOUGHT = "Thought";
+    private static final String ACTION = "Action";
+    private static final String ANSWER = "Answer";
+    private static final String IMPLICIT_THOUGHT = "Thought: (Implicit) I can answer without any more tools!\nAnswer: ";
+    private static final UserMessage REACT_ERROR_MESSAGE = UserMessage.from(
+            "Error: Could not parse output. Please follow the Thought-Action-Action Input" +
+                    " or Thought-Answer format. Try again.");
 
     static {
         var defaultMemoryIdProviders = ServiceHelper.loadFactories(
@@ -362,22 +377,44 @@ public class AiServiceMethodImplementationSupport {
                 throw runtime("Something is wrong, exceeded %s sequential tool executions", maxSequentialToolExecutions);
             }
 
+            boolean informReActError = false;
+            if (methodCreateInfo.isReActAgent()) {
+                try {
+                    response = parseReActOutput(response);
+                } catch (IllegalStateException e) {
+                    // unexpected format
+                    informReActError = true;
+                }
+            }
+
             AiMessage aiMessage = response.aiMessage();
             chatMemory.add(aiMessage);
+            if (informReActError) {
+                chatMemory.add(REACT_ERROR_MESSAGE);
+            }
 
-            if (!aiMessage.hasToolExecutionRequests()) {
+            if (!aiMessage.hasToolExecutionRequests() && !informReActError) {
                 break;
             }
 
-            for (ToolExecutionRequest toolExecutionRequest : aiMessage.toolExecutionRequests()) {
-                log.debugv("Attempting to execute tool {0}", toolExecutionRequest);
-                ToolExecutor toolExecutor = toolExecutors.get(toolExecutionRequest.name());
+            if (!informReActError) {
+                for (ToolExecutionRequest toolExecutionRequest : aiMessage.toolExecutionRequests()) {
+                    log.debugv("Attempting to execute tool {0}", toolExecutionRequest);
+                    ToolExecutor toolExecutor = toolExecutors.get(toolExecutionRequest.name());
 
-                ToolExecutionResultMessage toolExecutionResultMessage = toolExecutor == null
-                        ? context.toolService.applyToolHallucinationStrategy(toolExecutionRequest)
-                        : executeTool(auditSourceInfo, toolExecutionRequest, toolExecutor, memoryId, beanManager);
+                    ToolExecutionResultMessage toolExecutionResultMessage = toolExecutor == null
+                            ? context.toolService.applyToolHallucinationStrategy(toolExecutionRequest)
+                            : executeTool(auditSourceInfo, toolExecutionRequest, toolExecutor, memoryId, beanManager);
 
-                chatMemory.add(toolExecutionResultMessage);
+                    if (methodCreateInfo.isReActAgent()) {
+                        // add the "Observation" prefix to the message
+                        toolExecutionResultMessage = ToolExecutionResultMessage.from(
+                                toolExecutionResultMessage.id(),
+                                toolExecutionResultMessage.toolName(),
+                                OBSERVATION + toolExecutionResultMessage.text());
+                    }
+                    chatMemory.add(toolExecutionResultMessage);
+                }
             }
 
             log.debug("Attempting to obtain AI response");
@@ -838,6 +875,63 @@ public class AiServiceMethodImplementationSupport {
         return ConfigProvider.getConfig().getOptionalValue("quarkus.langchain4j.ai-service.max-tool-executions", Integer.class)
                 .orElse(
                         DEFAULT_MAX_SEQUENTIAL_TOOL_EXECUTIONS);
+    }
+
+    private static ChatResponse parseReActOutput(ChatResponse response) {
+        String message = response.aiMessage().text();
+        if (message == null) {
+            throw new IllegalStateException("Invalid ReAct message format");
+        }
+        if (!message.contains(THOUGHT)) {
+            // handle the case where the agent provides the answer directly without the Thought-Answer format
+            AiMessage aiMessage = AiMessage.from(IMPLICIT_THOUGHT + response.aiMessage().text());
+            return ChatResponse.builder()
+                    .aiMessage(aiMessage)
+                    // no tool executions
+                    .metadata(response.metadata())
+                    .build();
+        }
+        if (message.contains(ACTION)) {
+            Matcher reactPatternMatcher = REACT_REASONING_PATTERN.matcher(response.aiMessage().text());
+            if (reactPatternMatcher.find()) {
+                // parse the Thought-Action-Action Input message
+                String action = reactPatternMatcher.group(2);
+                String actionInput = reactPatternMatcher.group(3);
+                ToolExecutionRequest reactToolExecutionRequest = ToolExecutionRequest.builder()
+                        .name(action)
+                        .arguments(actionInput)
+                        .build();
+
+                // add the required tool call to the tool execution requests
+                List<ToolExecutionRequest> toolExecutionRequests = response.aiMessage().hasToolExecutionRequests()
+                        ? response.aiMessage().toolExecutionRequests()
+                        : new ArrayList<>();
+                toolExecutionRequests.add(reactToolExecutionRequest);
+                AiMessage aiMessageWithTool = AiMessage.from(response.aiMessage().text(), toolExecutionRequests);
+
+                return ChatResponse.builder()
+                        .aiMessage(aiMessageWithTool)
+                        .metadata(response.metadata())
+                        .build();
+            } else {
+                // unexpected format
+                throw new IllegalStateException("Invalid ReAct message format");
+            }
+        }
+        if (message.contains(ANSWER)) {
+            Matcher finalResponseMatcher = REACT_FINAL_RESPONSE_PATTERN.matcher(response.aiMessage().text());
+            if (finalResponseMatcher.find()) {
+                return ChatResponse.builder()
+                        .aiMessage(AiMessage.from(response.aiMessage().text()))
+                        // no tool executions
+                        .metadata(response.metadata())
+                        .build();
+            } else {
+                // unexpected format
+                throw new IllegalStateException("Invalid ReAct message format");
+            }
+        }
+        throw new IllegalStateException("Invalid ReAct message format");
     }
 
     public static class Input {

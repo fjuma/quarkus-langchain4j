@@ -50,6 +50,8 @@ public final class AiServiceMethodCreateInfo {
     // support for response augmenter, potentially null
     private final String responseAugmenterClassName;
 
+    private final boolean reActAgent;
+
     // these are populated when the AiService method is first called which can happen on any thread
     private transient final List<ToolSpecification> toolSpecifications = new CopyOnWriteArrayList<>();
     private transient final Map<String, ToolExecutor> toolExecutors = new ConcurrentHashMap<>();
@@ -82,7 +84,8 @@ public final class AiServiceMethodCreateInfo {
             List<String> inputGuardrailsClassNames,
             List<String> outputGuardrailsClassNames,
             String outputTokenAccumulatorClassName,
-            String responseAugmenterClassName) {
+            String responseAugmenterClassName,
+            boolean reActAgent) {
         this.interfaceName = interfaceName;
         this.methodName = methodName;
         this.systemMessageInfo = systemMessageInfo;
@@ -115,6 +118,7 @@ public final class AiServiceMethodCreateInfo {
         });
         this.switchToWorkerThreadForToolExecution = switchToWorkerThreadForToolExecution;
         this.responseAugmenterClassName = responseAugmenterClassName;
+        this.reActAgent = reActAgent;
     }
 
     public String getInterfaceName() {
@@ -191,6 +195,10 @@ public final class AiServiceMethodCreateInfo {
 
     public String getResponseAugmenterClassName() {
         return responseAugmenterClassName;
+    }
+
+    public boolean isReActAgent() {
+        return reActAgent;
     }
 
     @SuppressWarnings("unchecked")
